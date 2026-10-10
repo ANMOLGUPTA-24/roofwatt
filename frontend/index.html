@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>LeakLoop — from leak report to repair update</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root{--ink:#123039;--teal:#00796f;--mint:#d9f2e9;--paper:#f3f7f5;--muted:#64777c;--line:#dae5e0;--amber:#e9a72e;--red:#c84e45;--green:#24824f}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);font-family:Inter,system-ui,sans-serif;color:var(--ink)}main{max-width:1160px;margin:auto;padding:26px 20px 64px}
+    header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:8px 0 24px}.brand{color:var(--teal);font-size:.78rem;letter-spacing:.13em;font-weight:850;text-transform:uppercase}
+    h1{font-size:clamp(2.5rem,5.4vw,4.8rem);line-height:.94;letter-spacing:-.065em;margin:12px 0;max-width:800px}h1 span{color:var(--teal)}.lead{color:var(--muted);font-size:1.05rem;line-height:1.5;max-width:680px}
+    .track{background:var(--ink);color:white;border-radius:99px;padding:9px 13px;white-space:nowrap;font-size:.82rem}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:8px 0 16px}.metric,.panel{background:#fff;border:1px solid var(--line);border-radius:15px;box-shadow:0 8px 28px #18392f08}.metric{padding:14px 16px}.metric strong{display:block;font-size:1.5rem}.metric span{font-size:.78rem;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:.95fr 1.05fr;gap:16px}.panel{padding:20px}.panel h2{font-size:1.15rem;margin:0}.hint{font-size:.84rem;line-height:1.45;color:var(--muted)}label{display:block;font-size:.78rem;font-weight:800;margin:11px 0 5px}.row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    input,select,textarea{width:100%;padding:10px 11px;border:1px solid #c9d8d2;border-radius:8px;background:#fff;color:var(--ink);font:inherit;font-size:.88rem}textarea{resize:vertical;min-height:72px}input:focus,textarea:focus,select:focus{outline:3px solid var(--mint);border-color:var(--teal)}
+    button{border:0;border-radius:8px;background:var(--teal);color:#fff;font:inherit;font-weight:800;padding:11px 13px;cursor:pointer}button:hover{background:#00655d}button:disabled{opacity:.6;cursor:wait}.primary{width:100%;margin-top:13px}.locate{width:100%;margin:10px 0 2px;background:#e3f2ec;color:var(--ink);text-align:left}.locate:hover{background:#d4e9e0}
+    #map{height:215px;border-radius:10px;border:1px solid var(--line);z-index:0}.map-caption{font-size:.74rem;color:var(--muted);margin:5px 0}.tabs{display:flex;gap:6px;margin-bottom:13px}.tab{padding:9px 12px;background:#e7efeb;color:var(--ink);font-size:.83rem}.tab.active{background:var(--ink);color:white}.tabview{display:none}.tabview.active{display:block}
+    .toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}.toolbar select{width:auto;min-width:140px}.list{display:grid;gap:9px}.issue{padding:13px;border:1px solid var(--line);border-radius:11px;background:#fff}.issue-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.issue h3{font-size:.95rem;margin:0 0 4px}.issue p{font-size:.82rem;color:var(--muted);line-height:1.4;margin:6px 0}.status{font-size:.7rem;font-weight:850;text-transform:uppercase;letter-spacing:.06em;padding:5px 7px;border-radius:99px;white-space:nowrap;background:#fff0d5;color:#815800}.status.acknowledged{background:#e4effb;color:#305b87}.status.repaired{background:#dff3e6;color:#20633d}
+    .timeline{border-left:2px solid var(--line);margin:10px 0 8px 4px;padding-left:10px;color:var(--muted);font-size:.74rem}.actions{display:flex;gap:7px;align-items:center;margin-top:10px}.actions input{max-width:140px}.actions button{font-size:.76rem;padding:9px}.repair{background:var(--green)}.empty{padding:28px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px;font-size:.86rem}.error,.message{padding:9px;border-radius:8px;margin:8px 0;font-size:.82rem;display:none}.error{background:#fff0ee;color:#9d3029}.message{background:#e5f5ea;color:#235d38}
+    .footnote{margin-top:14px;padding:11px;border-left:4px solid var(--amber);background:#fff9ec;color:#655638;font-size:.75rem;line-height:1.45}.footer{text-align:center;color:var(--muted);font-size:.76rem;margin:20px 0}.auth{padding:11px;margin:12px 0;border-radius:9px;background:#e7f3ef;font-size:.8rem}.auth button{margin-top:7px;font-size:.78rem;padding:8px 10px}.evidence{display:block;font-size:.76rem;margin-top:8px}.photo-link{display:inline-block;margin-top:4px;font-size:.78rem;color:var(--teal);font-weight:800}
+    @media(max-width:800px){header{display:block}.track{display:inline-block;margin-top:8px}.layout{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}#map{height:200px}}
+  </style>
+</head>
+<body><main>
+  <header><div><div class="brand">Environmental Hacks · Heat & Water</div><h1>Every leak deserves <span>a last update.</span></h1><p class="lead">LeakLoop helps a campus or housing society move from a resident’s water leak report to a maintenance response and a repair update with a recorded flow check.</p></div><div class="track">Water conservation · community workflow</div></header>
+  <section class="metrics" aria-label="Water impact summary">
+    <div class="metric"><strong id="open-count">0</strong><span>open reports</span></div><div class="metric"><strong id="active-flow">0 L/day</strong><span>reported estimates at open leaks</span></div><div class="metric"><strong id="repair-count">0</strong><span>repairs recorded</span></div><div class="metric"><strong id="stopped-flow">0 L/day</strong><span>flow recorded at repair check</span></div>
+  </section>
+  <section class="layout">
+    <div class="panel">
+      <div class="tabs"><button class="tab active" data-tab="report-view">Report a leak</button><button class="tab" data-tab="queue-view">Maintenance queue</button></div>
+      <section id="report-view" class="tabview active">
+        <h2>Tell your maintenance team what is leaking</h2><p class="hint">Pick the spot on the map, describe the issue, and add an optional estimate. Your report appears in the shared queue.</p>
+        <button class="locate" id="locate">◎ &nbsp; Use my location</button><div id="map"></div><p class="map-caption">Tap the map to place a pin. You can move it by tapping again.</p>
+        <form id="report-form">
+          <div class="row"><div><label for="kind">Leak type</label><select id="kind"><option value="pipe">Pipe or supply line</option><option value="tap">Tap or fixture</option><option value="overflow">Tank or drain overflow</option></select></div><div><label for="location">Building / landmark</label><input id="location" placeholder="e.g. Library, ground floor" required maxlength="100"></div></div>
+          <label for="description">What did you notice?</label><textarea id="description" placeholder="A clear description helps maintenance find it quickly." required minlength="8" maxlength="500"></textarea>
+          <label for="flow">Estimated water loss (litres/day, if known)</label><input id="flow" type="number" min="0" max="1000000" step="1" placeholder="Leave blank if unknown">
+          <input id="lat" type="hidden" value="28.6139"><input id="lon" type="hidden" value="77.2090">
+          <button class="primary" id="submit-report" type="submit">Send leak report</button><p id="report-error" class="error"></p><p id="report-message" class="message"></p>
+        </form>
+      </section>
+      <section id="queue-view" class="tabview">
+        <h2>Maintenance response</h2><p class="hint">Acknowledge a report when someone takes it. After repair, record the flow check, repair note and optional evidence.</p>
+        <div id="auth-status" class="auth">Checking maintenance access…</div>
+        <div class="footnote">Report estimates and repair-check values are user-entered, not independently verified. Optional photos are stored privately and shared through temporary links.</div>
+      </section>
+    </div>
+    <section class="panel">
+      <div class="toolbar"><div><h2>Community leak board</h2><p class="hint" style="margin:4px 0 0">One report, a visible response, and a recorded repair.</p></div><select id="filter" aria-label="Filter reports"><option value="all">All reports</option><option value="reported">Needs response</option><option value="acknowledged">In progress</option><option value="repaired">Repaired</option></select></div>
+      <div id="issues" class="list"><div class="empty">Loading community reports…</div></div>
+      <div class="footnote">A report estimate is not a measured saving. The repair counter shows a flow value recorded by the maintenance user; it is not independent verification or cumulative water saved.</div>
+    </section>
+  </section>
+  <p class="footer">Built for a campus or housing society. No account required in this prototype; use only with a consenting demo community and no sensitive personal data.</p>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const byId = id => document.getElementById(id);
+  const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  let activeMode="report-view";
+  let appConfig={maintenance_auth:false,evidence_uploads:false};
+  const token=()=>sessionStorage.getItem("leakloop_access_token");
+  const authHeaders=()=>token()?{Authorization:"Bearer "+token()}:{};
+  const readLoginRedirect=()=>{
+    const params=new URLSearchParams(location.hash.slice(1));
+    if(params.get("access_token")){sessionStorage.setItem("leakloop_access_token",params.get("access_token"));history.replaceState({},document.title,location.pathname);}
+  };
+  const login=()=>{
+    const url=appConfig.hosted_ui+"/login?"+new URLSearchParams({client_id:appConfig.client_id,response_type:"token",scope:"openid email profile",redirect_uri:appConfig.callback_url});
+    location.assign(url);
+  };
+  const logout=()=>{
+    sessionStorage.removeItem("leakloop_access_token");
+    const url=appConfig.hosted_ui+"/logout?"+new URLSearchParams({client_id:appConfig.client_id,logout_uri:appConfig.callback_url});
+    location.assign(url);
+  };
+  const renderAuth=()=>{
+    const box=byId("auth-status");
+    if(!appConfig.maintenance_auth){box.innerHTML="<b>Local demo mode.</b> Maintenance updates work without sign-in. After AWS deployment, only accounts in the maintenance group can update reports.";return;}
+    box.innerHTML=token()?"<b>Maintenance session active.</b> You can acknowledge and record repairs. <button id=\"logout\">Sign out</button>":"<b>Maintenance sign-in required.</b> Only the Cognito maintenance group can update reports. <button id=\"login\">Sign in</button>";
+    byId(token()?"logout":"login").onclick=()=>token()?logout():login();
+  };
+  async function loadConfig(){
+    readLoginRedirect();
+    const response=await fetch("/config");
+    if(response.ok)appConfig=await response.json();
+    renderAuth();
+  }
+  async function uploadEvidence(file,context){
+    if(!file)return null;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024)throw Error("Use a JPG, PNG or WebP image smaller than 5 MB.");
+    if(!appConfig.evidence_uploads)throw Error("Photo evidence is available after AWS deployment.");
+    const response=await fetch("/uploads/presign",{method:"POST",headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify({context:context,content_type:file.type})});
+    const data=await response.json();if(!response.ok)throw Error(data.detail||"Could not prepare the photo upload");
+    const upload=await fetch(data.upload_url,{method:"PUT",headers:{"Content-Type":file.type},body:file});
+    if(!upload.ok)throw Error("Could not upload the evidence photo");return data.key;
+  }
+  const map = L.map("map").setView([28.6139,77.2090], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap contributors"}).addTo(map);
+  const issueMarkers = L.layerGroup().addTo(map);
+  let pin = L.marker([28.6139,77.2090], {draggable:true}).addTo(map);
+  const setLocation = (lat,lon) => { byId("lat").value=lat; byId("lon").value=lon; pin.setLatLng([lat,lon]); map.setView([lat,lon],16); };
+  map.on("click", e => setLocation(e.latlng.lat.toFixed(6),e.latlng.lng.toFixed(6)));
+  pin.on("dragend", e => {const p=e.target.getLatLng();byId("lat").value=p.lat;byId("lon").value=p.lng;});
+  byId("locate").onclick = () => {
+    if (!navigator.geolocation) { alert("Location is unavailable. Tap the map to place the report."); return; }
+    byId("locate").textContent="Finding your location…";
+    navigator.geolocation.getCurrentPosition(p=>{setLocation(p.coords.latitude,p.coords.longitude);byId("locate").textContent="Location set";},()=>{byId("locate").textContent="◎  Use my location";alert("Location permission was not granted. Tap the map to place the report.");},{timeout:8000,maximumAge:300000});
+  };
+  document.querySelectorAll(".tab").forEach(button=>button.onclick=()=>{
+    document.querySelectorAll(".tab,.tabview").forEach(item=>item.classList.remove("active"));
+    button.classList.add("active");byId(button.dataset.tab).classList.add("active");activeMode=button.dataset.tab;loadIssues();
+  });
+  byId("filter").onchange=loadIssues;
+  async function loadIssues(){
+    const container=byId("issues");
+    try{
+      const response=await fetch("/issues"),data=await response.json();
+      if(!response.ok)throw Error(data.detail||"Could not load reports");
+      const summary=data.summary;
+      byId("open-count").textContent=summary.open_reports;
+      byId("active-flow").textContent=Number(summary.estimated_active_lpd).toLocaleString("en-IN")+" L/day";
+      byId("repair-count").textContent=summary.repair_count;
+      byId("stopped-flow").textContent=Number(summary.recorded_lpd_stopped).toLocaleString("en-IN")+" L/day";
+      issueMarkers.clearLayers();
+      data.issues.forEach(issue=>{
+        const marker=L.circleMarker([Number(issue.lat),Number(issue.lon)],{radius:7,color:issue.status==="repaired"?"#24824f":"#c84e45",fillOpacity:.8});
+        marker.bindPopup("<b>"+escapeHtml(issue.location)+"</b><br>"+escapeHtml(issue.kind)+" · "+escapeHtml(issue.status));
+        marker.addTo(issueMarkers);
+      });
+      const filter=byId("filter").value;
+      const rows=data.issues.filter(issue=>(filter==="all"||issue.status===filter)&&(activeMode!=="queue-view"||issue.status!=="repaired"));
+      if(!rows.length){container.innerHTML='<div class="empty">No reports here yet. Add the first one from the form.<br><br>For a demo, report a real or clearly identified test leak, then acknowledge and resolve it.</div>';return;}
+      container.innerHTML=rows.map(issue=>{
+        const timeline=(issue.timeline||[]).map(event=>"<div><b>"+escapeHtml(event.status)+"</b> · "+escapeHtml(event.note)+"</div>").join("");
+        let action="";
+        if(activeMode==="queue-view"&&issue.status==="reported") action='<div class="actions"><input maxlength="300" placeholder="Who is taking this?" aria-label="Maintenance acknowledgement note" data-note="'+escapeHtml(issue.id)+'"><button data-action="acknowledged" data-id="'+escapeHtml(issue.id)+'">Acknowledge</button></div>';
+        if(activeMode==="queue-view"&&issue.status==="acknowledged") action='<div class="actions"><input type="number" min="0" step="1" placeholder="Flow check L/day" aria-label="Flow recorded in litres per day" data-flow="'+escapeHtml(issue.id)+'"><input maxlength="300" placeholder="Repair / check note" aria-label="Repair note" data-note="'+escapeHtml(issue.id)+'"><button class="repair" data-action="repaired" data-id="'+escapeHtml(issue.id)+'">Record repair</button></div><label class="evidence">Optional after-repair photo <input type="file" accept="image/jpeg,image/png,image/webp" data-repair-photo="'+escapeHtml(issue.id)+'"></label>';
+        const kind={pipe:"Pipe leak",tap:"Tap leak",overflow:"Overflow"}[issue.kind]||"Water leak";
+        const estimate=issue.estimated_lpd===null||issue.estimated_lpd===undefined?"Not provided":Number(issue.estimated_lpd).toLocaleString("en-IN")+" L/day";
+        const repairPhoto=issue.repair_photo_url?'<a class="photo-link" href="'+escapeHtml(issue.repair_photo_url)+'" target="_blank" rel="noopener">View repair photo</a>':"";
+        return '<article class="issue"><div class="issue-head"><div><h3>'+kind+' · '+escapeHtml(issue.location)+'</h3><span class="hint">'+new Date(issue.created_at).toLocaleString()+'</span></div><span class="status '+escapeHtml(issue.status)+'">'+escapeHtml(issue.status)+'</span></div><p>'+escapeHtml(issue.description)+'</p><p><b>Reported estimate:</b> '+estimate+'</p>'+(issue.measured_lpd_stopped!==undefined?'<p><b>Flow recorded at repair check:</b> '+Number(issue.measured_lpd_stopped).toLocaleString("en-IN")+' L/day</p>':"")+repairPhoto+'<div class="timeline">'+timeline+'</div>'+action+'</article>';
+      }).join("");
+      container.querySelectorAll("[data-action]").forEach(button=>button.onclick=()=>advanceIssue(button));
+    }catch(error){container.innerHTML='<div class="empty">'+escapeHtml(error.message)+'</div>';}
+  }
+  async function advanceIssue(button){
+    const id=button.dataset.id,action=button.dataset.action;
+    const input=document.querySelector('[data-flow="'+CSS.escape(id)+'"]');
+    const noteInput=document.querySelector('[data-note="'+CSS.escape(id)+'"]');
+    const note=noteInput?.value.trim();
+    if(!note){alert("Add a real note before updating this report.");return;}
+    const flow=input?Number(input.value):null;
+    if(action==="repaired"&&input.value.trim()===""){alert("Enter the flow value recorded during the repair check.");return;}
+    const photo=document.querySelector('[data-repair-photo="'+CSS.escape(id)+'"]')?.files?.[0];
+    button.disabled=true;
+    try{const repair_photo_key=await uploadEvidence(photo,"repair");const body={action:action,note:note,measured_lpd_stopped:flow,repair_photo_key};const response=await fetch("/issues/"+encodeURIComponent(id)+"/actions",{method:"POST",headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.detail||"Could not update report");await loadIssues();}
+    catch(error){alert(error.message);button.disabled=false;}
+  }
+  byId("report-form").onsubmit=async event=>{
+    event.preventDefault();const button=byId("submit-report"),err=byId("report-error"),msg=byId("report-message");
+    err.style.display="none";msg.style.display="none";button.disabled=true;button.textContent="Sending report…";
+    try{
+      const estimate=byId("flow").value.trim();
+      const body={kind:byId("kind").value,location:byId("location").value,description:byId("description").value,lat:Number(byId("lat").value),lon:Number(byId("lon").value),estimated_lpd:estimate===""?null:Number(estimate)};
+      const response=await fetch("/issues",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}),data=await response.json();
+      if(!response.ok)throw Error(data.detail||"Could not send report");
+      msg.textContent="Report sent. It is now visible in the community leak board.";msg.style.display="block";
+      byId("description").value="";byId("location").value="";byId("flow").value="";byId("filter").value="all";await loadIssues();
+    }catch(error){err.textContent=error.message;err.style.display="block";}
+    finally{button.disabled=false;button.textContent="Send leak report";}
+  };
+  loadConfig().then(loadIssues).catch(error=>{byId("auth-status").textContent="Could not load deployment configuration: "+error.message;loadIssues();});
+</script>
+</body>
+</html>

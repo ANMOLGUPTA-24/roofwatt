@@ -1,0 +1,8 @@
+.git/
+.venv/
+.aws-sam/
+__pycache__/
+*.pyc
+docs/
+data/
+AI_TOOLS.md

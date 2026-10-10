@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pydantic
+mangum
+aws-lambda-powertools
+boto3
+PyJWT[crypto]

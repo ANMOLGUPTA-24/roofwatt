@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: LeakLoop — accountable water leak reporting, repair evidence and maintenance workflow
+
+Parameters:
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Optional maintenance email for new-report and repair updates. Confirm the SNS email after deployment.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, '']]
+
+Globals:
+  Function:
+    Timeout: 35
+    MemorySize: 512
+    Runtime: python3.12
+
+Resources:
+  LeakLoopApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend.app.main.handler
+      # x86_64 keeps the cryptographic Cognito dependency portable for a normal
+      # local `sam build` without requiring a Docker cross-build.
+      Architectures: [x86_64]
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          LEAKS_TABLE: !Ref Leaks
+          EVIDENCE_BUCKET: !Ref EvidenceBucket
+          NOTIFICATION_TOPIC_ARN: !Ref LeakLoopAlerts
+          COGNITO_USER_POOL_ID: !Ref MaintenanceUserPool
+          COGNITO_CLIENT_ID: !Ref MaintenanceClient
+          COGNITO_HOSTED_UI: !Sub 'https://leakloop-${AWS::AccountId}-${AWS::Region}.auth.${AWS::Region}.amazoncognito.com'
+          APP_URL: !GetAtt LeakLoopApiUrl.FunctionUrl
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Leaks
+        - Statement:
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${EvidenceBucket.Arn}/evidence/*'
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: !Ref LeakLoopAlerts
+      Tags:
+        Project: leakloop
+
+  Leaks:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: leakloop
+
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: [Content-Type]
+            AllowedMethods: [PUT]
+            AllowedOrigins: ['*']
+            MaxAge: 300
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteDemoEvidenceAfter90Days
+            Status: Enabled
+            ExpirationInDays: 90
+      Tags:
+        - Key: Project
+          Value: leakloop
+
+  LeakLoopAlerts:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: LeakLoop
+      Tags:
+        - Key: Project
+          Value: leakloop
+
+  MaintenanceEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+      TopicArn: !Ref LeakLoopAlerts
+
+  MaintenanceUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'leakloop-maintenance-${AWS::StackName}'
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+
+  MaintenanceGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: maintenance
+      UserPoolId: !Ref MaintenanceUserPool
+      Description: Accounts allowed to acknowledge and close LeakLoop reports
+
+  MaintenanceUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref MaintenanceUserPool
+      Domain: !Sub 'leakloop-${AWS::AccountId}-${AWS::Region}'
+
+  MaintenanceClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref MaintenanceUserPool
+      ClientName: leakloop-maintenance-web
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [implicit]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!GetAtt LeakLoopApiUrl.FunctionUrl]
+      LogoutURLs: [!GetAtt LeakLoopApiUrl.FunctionUrl]
+
+Outputs:
+  LeakLoopUrl:
+    Description: Public resident report and maintenance portal
+    Value: !GetAtt LeakLoopApiUrl.FunctionUrl
+  LeaksTable:
+    Description: DynamoDB table for reports and repair history
+    Value: !Ref Leaks
+  EvidenceBucket:
+    Description: Private S3 bucket for optional repair evidence (lifecycle deletes after 90 days)
+    Value: !Ref EvidenceBucket
+  CognitoUserPool:
+    Description: Create a maintenance user and add it to the maintenance group before the demo
+    Value: !Ref MaintenanceUserPool
+  AlertsTopic:
+    Description: SNS topic for maintenance notifications
+    Value: !Ref LeakLoopAlerts
